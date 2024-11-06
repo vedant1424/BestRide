@@ -74,6 +74,7 @@ dependencies {
 
     // Hilt Dependencies
     implementation(libs.hilt.android)
+    implementation(libs.androidx.datastore.core.android)
     kapt(libs.hilt.android.compiler)
     implementation(libs.hilt.navigation.compose)
 
@@ -83,6 +84,9 @@ dependencies {
 
     // ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+    //DataStore
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     // Testing Dependencies
     testImplementation(libs.junit)
@@ -96,5 +100,5 @@ dependencies {
 
 kapt {
     correctErrorTypes = true
-    useBuildCache = false // Add this line
+    useBuildCache = false
 }

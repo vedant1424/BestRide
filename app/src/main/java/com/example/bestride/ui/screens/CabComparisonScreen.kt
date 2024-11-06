@@ -121,6 +121,11 @@ fun WebViewComponent(url: String) {
     var isLoading by remember { mutableStateOf(true) }
     var webView by remember { mutableStateOf<WebView?>(null) }
 
+    // Add state to track if it's Uber
+    val isUberUrl = remember(url) {
+        url.contains("uber", ignoreCase = true)
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -157,21 +162,121 @@ fun WebViewComponent(url: String) {
                         allowFileAccess = true
                     }
 
+                    WebView.setWebContentsDebuggingEnabled(true)
+
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, url, favicon)
                             isLoading = true
+                            Log.d("WebView", "Page started loading: $url")
                         }
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             isLoading = false
+                            Log.d("WebView", "Page finished loading: $url")
+
+                            // Only inject for Uber
+                            if (isUberUrl) {
+                                val javascript = """
+                                    (function() {
+                                        function injectPhoneNumber() {
+                                            console.log('Attempting to find phone input...');
+                                            
+                                            // More specific selectors based on the HTML structure
+                                            const phoneInput = document.querySelector('input[aria-label="Enter phone number or email"]') || 
+                                                             document.querySelector('div[class*="css"] input') ||
+                                                             document.querySelector('input[placeholder*="phone"]');
+                                            
+                                            if (phoneInput) {
+                                                console.log('Found phone input field');
+                                                // Set the value
+                                                phoneInput.value = '9999999999';
+                                                
+                                                // Create and dispatch events to trigger Uber's validation
+                                                const inputEvent = new InputEvent('input', {
+                                                    bubbles: true,
+                                                    cancelable: true,
+                                                });
+                                                phoneInput.dispatchEvent(inputEvent);
+                                                
+                                                // Also dispatch change event
+                                                const changeEvent = new Event('change', {
+                                                    bubbles: true,
+                                                    cancelable: true
+                                                });
+                                                phoneInput.dispatchEvent(changeEvent);
+                                                
+                                                console.log('Phone number injected and events dispatched');
+                                                
+                                                // Look for the continue button with various selectors
+                                                const continueButton = 
+                                                    document.querySelector('button[data-testid="next-button"]') ||
+                                                    document.querySelector('button[type="submit"]') ||
+                                                    Array.from(document.getElementsByTagName('button'))
+                                                        .find(button => 
+                                                            button.textContent.toLowerCase().includes('continue') || 
+                                                            button.innerText.toLowerCase().includes('continue')
+                                                        );
+                                                
+                                                if (continueButton) {
+                                                    console.log('Found continue button');
+                                                    setTimeout(() => {
+                                                        // Create and dispatch click event
+                                                        const clickEvent = new MouseEvent('click', {
+                                                            bubbles: true,
+                                                            cancelable: true,
+                                                            view: window
+                                                        });
+                                                        continueButton.dispatchEvent(clickEvent);
+                                                        console.log('Clicked continue button');
+                                                    }, 1000);
+                                                } else {
+                                                    console.log('Continue button not found');
+                                                }
+                                            } else {
+                                                console.log('Phone input not found, retrying...');
+                                                // Retry after a delay
+                                                setTimeout(injectPhoneNumber, 1000);
+                                            }
+                                        }
+                                        
+                                        // Add a mutation observer to handle dynamic content loading
+                                        const observer = new MutationObserver((mutations) => {
+                                            console.log('DOM changed, attempting injection...');
+                                            injectPhoneNumber();
+                                        });
+                                        
+                                        // Start observing
+                                        observer.observe(document.body, {
+                                            childList: true,
+                                            subtree: true
+                                        });
+                                        
+                                        // Initial attempt
+                                        injectPhoneNumber();
+                                    })()
+                                """.trimIndent()
+
+                                view?.evaluateJavascript(javascript) { result ->
+                                    Log.d("WebView", "JavaScript result: $result")
+                                }
+                            }
                         }
 
                         override fun shouldOverrideUrlLoading(
                             view: WebView?,
                             request: WebResourceRequest?
                         ): Boolean = false
+
+                        override fun onReceivedError(
+                            view: WebView?,
+                            request: WebResourceRequest?,
+                            error: WebResourceError?
+                        ) {
+                            Log.e("WebView", "Error loading ${request?.url}: ${error?.description}")
+                            super.onReceivedError(view, request, error)
+                        }
                     }
 
                     webChromeClient = object : WebChromeClient() {
@@ -180,6 +285,11 @@ fun WebViewComponent(url: String) {
                             callback: GeolocationPermissions.Callback?
                         ) {
                             callback?.invoke(origin, true, false)
+                        }
+
+                        override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                            Log.d("WebView Console", "${message.message()} -- From line ${message.lineNumber()} of ${message.sourceId()}")
+                            return true
                         }
                     }
 
