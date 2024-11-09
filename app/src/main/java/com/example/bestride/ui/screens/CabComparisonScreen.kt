@@ -1,8 +1,7 @@
+
 package com.example.bestride.ui.screens
 
-import android.content.Intent
 import android.graphics.Bitmap
-import android.os.Message
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.*
@@ -19,7 +18,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.example.bestride.presentation.state.UberAuthState
+import com.example.bestride.presentation.viewmodel.CabComparisonViewModel
+import com.example.bestride.presentation.viewmodel.UberAuthViewModel
+import com.example.bestride.ui.dialogs.UberAuthDialog
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
@@ -29,26 +33,31 @@ data class LocationDetails(
     val name: String
 )
 
+enum class CabType {
+    OLA, UBER, RAPIDO
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CabComparisonScreen(
     navController: NavHostController,
-    sourceLat: Double?,
-    sourceLng: Double?,
-    destLat: Double?,
-    destLng: Double?
+    viewModel: CabComparisonViewModel = hiltViewModel()
 ) {
-    val sourceLocation = LocationDetails(
-        lat = sourceLat ?: 0.0,
-        lng = sourceLng ?: 0.0,
-        name = "Source Location"
-    )
+    val sourceLocation = remember {
+        LocationDetails(
+            lat = viewModel.sourceLat.toDouble(),
+            lng = viewModel.sourceLng.toDouble(),
+            name = viewModel.sourceAddress
+        )
+    }
 
-    val destLocation = LocationDetails(
-        lat = destLat ?: 0.0,
-        lng = destLng ?: 0.0,
-        name = "Destination Location"
-    )
+    val destLocation = remember {
+        LocationDetails(
+            lat = viewModel.destLat.toDouble(),
+            lng = viewModel.destLng.toDouble(),
+            name = viewModel.destAddress
+        )
+    }
 
     val tabs = listOf("Ola", "Uber", "Rapido")
     val pagerState = rememberPagerState { tabs.size }
@@ -61,8 +70,28 @@ fun CabComparisonScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding() // Add system bars padding
+                .systemBarsPadding()
         ) {
+            // Location Summary Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Pickup: ${sourceLocation.name}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Drop: ${destLocation.name}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            // Tab Row
             ScrollableTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 edgePadding = 0.dp,
@@ -83,6 +112,7 @@ fun CabComparisonScreen(
                 }
             }
 
+            // Content Area
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -98,14 +128,17 @@ fun CabComparisonScreen(
                             .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
                     ) {
                         when (page) {
-                            0 -> WebViewComponent(
-                                url = buildOlaUrl(sourceLocation, destLocation)
+                            0 -> CabWebView(
+                                url = buildOlaUrl(sourceLocation, destLocation),
+                                cabType = CabType.OLA
                             )
-                            1 -> WebViewComponent(
-                                url = buildUberUrl(sourceLocation, destLocation)
+                            1 -> CabWebView(
+                                url = buildUberUrl(sourceLocation, destLocation),
+                                cabType = CabType.UBER
                             )
-                            2 -> WebViewComponent(
-                                url = buildRapidoUrl(sourceLocation, destLocation)
+                            2 -> CabWebView(
+                                url = buildRapidoUrl(sourceLocation, destLocation),
+                                cabType = CabType.RAPIDO
                             )
                         }
                     }
@@ -116,14 +149,31 @@ fun CabComparisonScreen(
 }
 
 @Composable
-fun WebViewComponent(url: String) {
+fun CabWebView(
+    url: String,
+    cabType: CabType,
+    viewModel: UberAuthViewModel = hiltViewModel()
+) {
     val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var showAuthDialog by remember { mutableStateOf(false) }
+    var injectionInProgress by remember { mutableStateOf(false) }
+    val isUberCab = cabType == CabType.UBER
+    val authState by viewModel.authState.collectAsState()
 
-    // Add state to track if it's Uber
-    val isUberUrl = remember(url) {
-        url.contains("uber", ignoreCase = true)
+    DisposableEffect(Unit) {
+        onDispose {
+            webView?.apply {
+                stopLoading()
+                clearCache(true)
+                clearHistory()
+                removeAllViews()
+                destroy()
+            }
+            viewModel.clearWebView()
+            webView = null
+        }
     }
 
     Box(
@@ -131,15 +181,6 @@ fun WebViewComponent(url: String) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        DisposableEffect(url) {
-            onDispose {
-                webView?.stopLoading()
-                webView?.clearCache(true)
-                webView?.clearHistory()
-                webView = null
-            }
-        }
-
         AndroidView(
             factory = { context ->
                 WebView(context).apply {
@@ -153,7 +194,7 @@ fun WebViewComponent(url: String) {
                         domStorageEnabled = true
                         databaseEnabled = true
                         mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                        userAgentString = "Mozilla/5.0 (Linux; Android 10; SM-A505F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36"
+                        userAgentString = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36"
                         setGeolocationEnabled(true)
                         javaScriptCanOpenWindowsAutomatically = true
                         loadWithOverviewMode = true
@@ -162,121 +203,39 @@ fun WebViewComponent(url: String) {
                         allowFileAccess = true
                     }
 
-                    WebView.setWebContentsDebuggingEnabled(true)
-
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, url, favicon)
                             isLoading = true
-                            Log.d("WebView", "Page started loading: $url")
                         }
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             isLoading = false
-                            Log.d("WebView", "Page finished loading: $url")
-
-                            // Only inject for Uber
-                            if (isUberUrl) {
-                                val javascript = """
-                                    (function() {
-                                        function injectPhoneNumber() {
-                                            console.log('Attempting to find phone input...');
-                                            
-                                            // More specific selectors based on the HTML structure
-                                            const phoneInput = document.querySelector('input[aria-label="Enter phone number or email"]') || 
-                                                             document.querySelector('div[class*="css"] input') ||
-                                                             document.querySelector('input[placeholder*="phone"]');
-                                            
-                                            if (phoneInput) {
-                                                console.log('Found phone input field');
-                                                // Set the value
-                                                phoneInput.value = '9999999999';
-                                                
-                                                // Create and dispatch events to trigger Uber's validation
-                                                const inputEvent = new InputEvent('input', {
-                                                    bubbles: true,
-                                                    cancelable: true,
-                                                });
-                                                phoneInput.dispatchEvent(inputEvent);
-                                                
-                                                // Also dispatch change event
-                                                const changeEvent = new Event('change', {
-                                                    bubbles: true,
-                                                    cancelable: true
-                                                });
-                                                phoneInput.dispatchEvent(changeEvent);
-                                                
-                                                console.log('Phone number injected and events dispatched');
-                                                
-                                                // Look for the continue button with various selectors
-                                                const continueButton = 
-                                                    document.querySelector('button[data-testid="next-button"]') ||
-                                                    document.querySelector('button[type="submit"]') ||
-                                                    Array.from(document.getElementsByTagName('button'))
-                                                        .find(button => 
-                                                            button.textContent.toLowerCase().includes('continue') || 
-                                                            button.innerText.toLowerCase().includes('continue')
-                                                        );
-                                                
-                                                if (continueButton) {
-                                                    console.log('Found continue button');
-                                                    setTimeout(() => {
-                                                        // Create and dispatch click event
-                                                        const clickEvent = new MouseEvent('click', {
-                                                            bubbles: true,
-                                                            cancelable: true,
-                                                            view: window
-                                                        });
-                                                        continueButton.dispatchEvent(clickEvent);
-                                                        console.log('Clicked continue button');
-                                                    }, 1000);
-                                                } else {
-                                                    console.log('Continue button not found');
-                                                }
-                                            } else {
-                                                console.log('Phone input not found, retrying...');
-                                                // Retry after a delay
-                                                setTimeout(injectPhoneNumber, 1000);
-                                            }
-                                        }
-                                        
-                                        // Add a mutation observer to handle dynamic content loading
-                                        const observer = new MutationObserver((mutations) => {
-                                            console.log('DOM changed, attempting injection...');
-                                            injectPhoneNumber();
-                                        });
-                                        
-                                        // Start observing
-                                        observer.observe(document.body, {
-                                            childList: true,
-                                            subtree: true
-                                        });
-                                        
-                                        // Initial attempt
-                                        injectPhoneNumber();
-                                    })()
-                                """.trimIndent()
-
-                                view?.evaluateJavascript(javascript) { result ->
-                                    Log.d("WebView", "JavaScript result: $result")
+                            if (isUberCab && !showAuthDialog) {
+                                checkAuthenticationRequired(view) { required ->
+                                    if (required) {
+                                        viewModel.updateAuthState(UberAuthState.PhoneNumberInput)
+                                        showAuthDialog = true
+                                    }
                                 }
                             }
                         }
-
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView?,
-                            request: WebResourceRequest?
-                        ): Boolean = false
 
                         override fun onReceivedError(
                             view: WebView?,
                             request: WebResourceRequest?,
                             error: WebResourceError?
                         ) {
-                            Log.e("WebView", "Error loading ${request?.url}: ${error?.description}")
                             super.onReceivedError(view, request, error)
+                            Log.e("WebView", "Error: ${error?.description}")
+                            isLoading = false
                         }
+
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): Boolean = false
                     }
 
                     webChromeClient = object : WebChromeClient() {
@@ -288,16 +247,173 @@ fun WebViewComponent(url: String) {
                         }
 
                         override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                            Log.d("WebView Console", "${message.message()} -- From line ${message.lineNumber()} of ${message.sourceId()}")
+                            Log.d(
+                                "WebView Console",
+                                "${message.message()} -- From line ${message.lineNumber()} of ${message.sourceId()}"
+                            )
                             return true
                         }
                     }
-
                     loadUrl(url)
                 }
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (showAuthDialog && isUberCab) {
+            UberAuthDialog(
+                viewModel = viewModel,
+                onDismiss = {
+                    showAuthDialog = false
+                    viewModel.updateAuthState(UberAuthState.Initial)
+                },
+                onPhoneSubmit = { phoneNumber ->
+                    if (!injectionInProgress) {
+                        injectionInProgress = true
+                        webView?.evaluateJavascript("""
+            (function() {
+                try {
+                    function simulateKeyPress(element, key) {
+                        const keydownEvent = new KeyboardEvent('keydown', {
+                            key: key,
+                            code: 'Digit' + key,
+                            keyCode: key.charCodeAt(0),
+                            which: key.charCodeAt(0),
+                            bubbles: true,
+                            cancelable: true
+                        });
+                        element.dispatchEvent(keydownEvent);
+
+                        // Update value character by character
+                        element.value = element.value + key;
+                        element.dispatchEvent(new Event('input', { bubbles: true }));
+                        element.dispatchEvent(new Event('change', { bubbles: true }));
+
+                        element.dispatchEvent(new KeyboardEvent('keyup', {
+                            key: key,
+                            code: 'Digit' + key,
+                            keyCode: key.charCodeAt(0),
+                            which: key.charCodeAt(0),
+                            bubbles: true,
+                            cancelable: true
+                        }));
+                    }
+
+                    async function injectFullNumber(number) {
+                        const phoneInput = document.querySelector('#PHONE_NUMBER_or_EMAIL_ADDRESS');
+                        if (!phoneInput) return false;
+
+                        // Clear any existing value
+                        phoneInput.value = '';
+                        phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        
+                        // Focus the input
+                        phoneInput.focus();
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+
+                        // Type +
+                        console.log('Typing +');
+                        simulateKeyPress(phoneInput, '+');
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+
+                        // Type 91
+                        console.log('Typing 9');
+                        simulateKeyPress(phoneInput, '9');
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        
+                        console.log('Typing 1');
+                        simulateKeyPress(phoneInput, '1');
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+
+                        // Type the actual phone number very slowly
+                        for(let i = 0; i < number.length; i++) {
+                            console.log('Typing digit:', number[i]);
+                            simulateKeyPress(phoneInput, number[i]);
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                        }
+
+                        // Final wait before clicking continue
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        
+                        const continueButton = Array.from(document.getElementsByTagName('button'))
+                            .find(button => 
+                                button.textContent.toLowerCase().includes('continue') &&
+                                !button.textContent.toLowerCase().includes('google') &&
+                                !button.textContent.toLowerCase().includes('apple')
+                            );
+                            
+                        if (continueButton && !continueButton.disabled) {
+                            console.log('Clicking continue button');
+                            continueButton.click();
+                        } else {
+                            console.log('Continue button not found or disabled');
+                        }
+                    }
+
+                    // Start the injection process
+                    console.log('Starting full number injection');
+                    injectFullNumber('${phoneNumber}');
+                    return true;
+                } catch(e) {
+                    console.error('Error:', e);
+                    return false;
+                }
+            })();
+        """.trimIndent()) { result ->
+                            injectionInProgress = false
+                            Log.d("WebView", "Phone injection result: $result")
+                        }
+                    }
+                },
+
+
+
+
+                onOTPSubmit = { otp ->
+                    if (!injectionInProgress) {
+                        injectionInProgress = true
+                        webView?.evaluateJavascript("""
+                            (function() {
+                                try {
+                                    const otpInput = document.querySelector('input[type="tel"]') ||
+                                                   document.querySelector('input[aria-label*="digit code"]') ||
+                                                   document.querySelector('input[aria-label="Enter an OTP Code"]');
+                                    
+                                    if (!otpInput) {
+                                        console.error('OTP input not found');
+                                        return false;
+                                    }
+                                    
+                                    otpInput.value = '${otp}';
+                                    otpInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                    otpInput.dispatchEvent(new Event('change', { bubbles: true }));
+                                    
+                                    const verifyButton = Array.from(document.getElementsByTagName('button'))
+                                        .find(button => 
+                                            button.textContent.toLowerCase().includes('verify') ||
+                                            button.textContent.toLowerCase().includes('continue')
+                                        );
+                                    
+                                    if (!verifyButton) {
+                                        console.error('Verify button not found');
+                                        return false;
+                                    }
+                                    
+                                    verifyButton.click();
+                                    return true;
+                                } catch(e) {
+                                    console.error('Error:', e);
+                                    return false;
+                                }
+                            })();
+                        """.trimIndent()) { result ->
+                            injectionInProgress = false
+                            Log.d("WebView", "OTP injection result: $result")
+                        }
+                    }
+                }
+            )
+        }
 
         if (isLoading) {
             Box(
@@ -306,18 +422,29 @@ fun WebViewComponent(url: String) {
                     .background(Color.White.copy(alpha = 0.7f)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Loading...",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Text("Loading...")
             }
         }
     }
 }
 
-private fun buildOlaUrl(source: LocationDetails, dest: LocationDetails): String {
-    return buildString {
+private fun checkAuthenticationRequired(webView: WebView?, callback: (Boolean) -> Unit) {
+    val script = """
+        (function() {
+            const phoneInput = document.querySelector('input[placeholder*="phone"]') || 
+                             document.querySelector('input[aria-label="Enter phone number or email"]') ||
+                             document.querySelector('input[type="tel"]');
+            return phoneInput ? true : false;
+        })();
+    """.trimIndent()
+
+    webView?.evaluateJavascript(script) { result ->
+        callback(result == "true")
+    }
+}
+
+private fun buildOlaUrl(source: LocationDetails, dest: LocationDetails): String =
+    buildString {
         append("https://book.olacabs.com/?")
         append("serviceType=p2p")
         append("&utm_source=widget_on_olacabs")
@@ -328,18 +455,15 @@ private fun buildOlaUrl(source: LocationDetails, dest: LocationDetails): String 
         append("&drop_lng=${dest.lng}")
         append("&drop_name=${URLEncoder.encode(dest.name, "UTF-8")}")
     }
-}
 
-private fun buildUberUrl(source: LocationDetails, dest: LocationDetails): String {
-    return buildString {
+private fun buildUberUrl(source: LocationDetails, dest: LocationDetails): String =
+    buildString {
         append("https://m.uber.com/looking?")
         append("pickup_lat=${source.lat}")
         append("&pickup_lng=${source.lng}")
         append("&dropoff_lat=${dest.lat}")
         append("&dropoff_lng=${dest.lng}")
     }
-}
 
-private fun buildRapidoUrl(source: LocationDetails, dest: LocationDetails): String {
-    return "https://app.rapido.bike"
-}
+private fun buildRapidoUrl(source: LocationDetails, dest: LocationDetails): String =
+    "https://app.rapido.bike"

@@ -9,12 +9,10 @@ import javax.inject.Inject
 class CabComparisonViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
-    val sourceLat = savedStateHandle.get<String>("sourceLat") ?: ""
-    val sourceLng = savedStateHandle.get<String>("sourceLng") ?: ""
-    val destLat = savedStateHandle.get<String>("destLat") ?: ""
-    val destLng = savedStateHandle.get<String>("destLng") ?: ""
-    val sourceAddress = savedStateHandle.get<String>("sourceAddress") ?: ""
-    val destAddress = savedStateHandle.get<String>("destAddress") ?: ""
-
-    // Add methods to load cab prices here
+    val sourceLat: Float = savedStateHandle.get<Float>("sourceLat") ?: 0f
+    val sourceLng: Float = savedStateHandle.get<Float>("sourceLng") ?: 0f
+    val destLat: Float = savedStateHandle.get<Float>("destLat") ?: 0f
+    val destLng: Float = savedStateHandle.get<Float>("destLng") ?: 0f
+    val sourceAddress: String = savedStateHandle.get<String>("sourceAddress") ?: ""
+    val destAddress: String = savedStateHandle.get<String>("destAddress") ?: ""
 }

@@ -109,9 +109,7 @@ fun LoginScreen(
 
             when (uiState) {
                 is AuthUiState.Loading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    Text("loading.....")
                 }
                 is AuthUiState.Error -> {
                     Text(

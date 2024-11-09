@@ -72,10 +72,7 @@ fun BestrideButton(
         enabled = enabled && !isLoading
     ) {
         if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                color = MaterialTheme.colorScheme.onPrimary
-            )
+            Text("loading.....")
         } else {
             Text(text)
         }
@@ -104,7 +101,7 @@ fun BestrideLoadingIndicator(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        CircularProgressIndicator()
+        Text("loading........")
     }
 }
 

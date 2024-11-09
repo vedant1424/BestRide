@@ -27,16 +27,15 @@ sealed class Screen(val route: String) {
             destAddress: String
         ): String {
             return "$route?" +
-                    "sourceLat=${sourceLat ?: ""}&" +
-                    "sourceLng=${sourceLng ?: ""}&" +
-                    "destLat=${destLat ?: ""}&" +
-                    "destLng=${destLng ?: ""}&" +
+                    "sourceLat=${sourceLat ?: 0.0}&" +
+                    "sourceLng=${sourceLng ?: 0.0}&" +
+                    "destLat=${destLat ?: 0.0}&" +
+                    "destLng=${destLng ?: 0.0}&" +
                     "sourceAddress=${sourceAddress}&" +
                     "destAddress=${destAddress}"
         }
     }
 }
-
 
 @Composable
 fun AppNavigation(
@@ -69,35 +68,51 @@ fun AppNavigation(
         }
 
         composable(
-            route = "cab_comparison?sourceLat={sourceLat}&sourceLng={sourceLng}&destLat={destLat}&destLng={destLng}",
+            route = "${Screen.CabComparison.route}?" +
+                    "sourceLat={sourceLat}&" +
+                    "sourceLng={sourceLng}&" +
+                    "destLat={destLat}&" +
+                    "destLng={destLng}&" +
+                    "sourceAddress={sourceAddress}&" +
+                    "destAddress={destAddress}",
             arguments = listOf(
-                navArgument("sourceLat") { type = NavType.StringType; nullable = true },
-                navArgument("sourceLng") { type = NavType.StringType; nullable = true },
-                navArgument("destLat") { type = NavType.StringType; nullable = true },
-                navArgument("destLng") { type = NavType.StringType; nullable = true }
+                navArgument("sourceLat") {
+                    type = NavType.FloatType
+                    defaultValue = 0f
+                },
+                navArgument("sourceLng") {
+                    type = NavType.FloatType
+                    defaultValue = 0f
+                },
+                navArgument("destLat") {
+                    type = NavType.FloatType
+                    defaultValue = 0f
+                },
+                navArgument("destLng") {
+                    type = NavType.FloatType
+                    defaultValue = 0f
+                },
+                navArgument("sourceAddress") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("destAddress") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
             )
-        ) { backStackEntry ->
-            val sourceLat = backStackEntry.arguments?.getString("sourceLat")?.toDoubleOrNull()
-            val sourceLng = backStackEntry.arguments?.getString("sourceLng")?.toDoubleOrNull()
-            val destLat = backStackEntry.arguments?.getString("destLat")?.toDoubleOrNull()
-            val destLng = backStackEntry.arguments?.getString("destLng")?.toDoubleOrNull()
-
+        ) {
             CabComparisonScreen(
                 navController = navController,
-                sourceLat = sourceLat,
-                sourceLng = sourceLng,
-                destLat = destLat,
-                destLng = destLng
+                viewModel = hiltViewModel()
             )
         }
     }
 }
 
-
-
 // Extension functions for navigation
 fun NavHostController.navigateToRegister() {
-    this.navigate(Screen.Register.route){
+    this.navigate(Screen.Register.route) {
         launchSingleTop = true
     }
 }
@@ -110,13 +125,14 @@ fun NavHostController.navigateToCabComparison(
     sourceAddress: String,
     destAddress: String
 ) {
-    val route = Screen.CabComparison.route +
-            "?sourceLat=${sourceLat}" +
-            "&sourceLng=${sourceLng}" +
-            "&destLat=${destLat}" +
-            "&destLng=${destLng}" +
-            "&sourceAddress=${sourceAddress}" +
-            "&destAddress=${destAddress}"
+    val route = Screen.CabComparison.createRoute(
+        sourceLat = sourceLat,
+        sourceLng = sourceLng,
+        destLat = destLat,
+        destLng = destLng,
+        sourceAddress = sourceAddress,
+        destAddress = destAddress
+    )
     this.navigate(route) {
         launchSingleTop = true
     }
@@ -124,7 +140,6 @@ fun NavHostController.navigateToCabComparison(
 
 fun NavHostController.navigateToLogin() {
     this.navigate(Screen.Login.route) {
-        // Clear the back stack up to login
         popUpTo(Screen.Login.route) { inclusive = true }
         launchSingleTop = true
     }
@@ -132,7 +147,6 @@ fun NavHostController.navigateToLogin() {
 
 fun NavHostController.navigateToBooking() {
     this.navigate(Screen.Booking.route) {
-        // Clear the back stack up to booking
         popUpTo(Screen.Login.route) { inclusive = true }
         launchSingleTop = true
     }
